@@ -24,7 +24,7 @@
 
     /* App Styles */
     #mainApp { display: none; padding: 20px; }
-    .admin-panel { margin: 10px auto 25px; max-width: 350px; background: white; padding: 15px; border-radius: 15px; }
+    .admin-panel { margin: 10px auto 25px; max-width: 350px; background: white; padding: 15px; border-radius: 15px; display: none; }
     input { padding: 12px; font-size: 16px; margin: 5px; border-radius: 8px; border: 1px solid #ddd; width: 70%; }
     
     button { padding: 10px 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
@@ -41,7 +41,7 @@
     .btn-minus { background: var(--warning); color: white; }
     .btn-reset { background: var(--danger); color: white; font-size: 12px; }
     
-    #logoutBtn { position: absolute; top: 20px; right: 10px; background: white; color: black; font-size: 12px; }
+    #logoutBtn { position: absolute; top: 20px; right: 10px; background: white; color: black; font-size: 12px; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
@@ -59,7 +59,7 @@
   <button id="logoutBtn" onclick="location.reload()">Abmelden</button>
   <h1 id="welcomeTitle">📱 Familien Punkte</h1>
 
-  <div class="admin-panel" id="adminControls">
+  <div class="admin-panel" id="jannisControls">
     <input type="text" id="nameInput" placeholder="Neues Kind...">
     <button class="add-btn" id="addUserBtn">Hinzufügen</button>
   </div>
@@ -85,26 +85,27 @@
   const db = getDatabase(app);
   const usersRef = ref(db, 'users');
 
-  let myRole = "gast";
+  let myRole = "gast"; // Rollen: 'jannis', 'mama', 'gast'
   let currentUsers = {};
 
-  // Login Logik
   window.login = function(role) {
     if (role === 'mama') {
       let pw = prompt("Passwort für Mama:");
-      if (pw !== "mama123") return alert("Falsch!"); // ÄNDERE DAS PASSWORT HIER
-      myRole = "admin";
+      if (pw !== "mama123") return alert("Falsch!");
+      myRole = "mama";
     } else if (role === 'jannis') {
       let pw = prompt("Passwort für Jannis:");
-      if (pw !== "jannis123") return alert("Falsch!"); // ÄNDERE DAS PASSWORT HIER
-      myRole = "admin";
+      if (pw !== "jannis123") return alert("Falsch!");
+      myRole = "jannis";
     } else {
       myRole = "gast";
     }
 
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("mainApp").style.display = "block";
-    document.getElementById("adminControls").style.display = (myRole === "admin") ? "block" : "none";
+    
+    // Nur Jannis sieht das Hinzufügen-Panel
+    document.getElementById("jannisControls").style.display = (myRole === "jannis") ? "block" : "none";
     
     loadData();
   };
@@ -118,7 +119,7 @@
 
   window.addUser = function() {
     const input = document.getElementById("nameInput");
-    if(input.value.trim() && myRole === "admin") {
+    if(input.value.trim() && myRole === "jannis") {
       push(usersRef, { name: input.value.trim(), points: 0 });
       input.value = "";
     }
@@ -126,14 +127,18 @@
   document.getElementById("addUserBtn").onclick = window.addUser;
 
   window.changePoint = (id, amount) => {
-    if(myRole !== "admin") return;
+    // Mama darf nur abziehen (amount = -1)
+    if(myRole === "mama" && amount > 0) return; 
+    // Gast darf gar nichts
+    if(myRole === "gast") return;
+
     let newPoints = (currentUsers[id].points || 0) + amount;
     if(newPoints < 0) newPoints = 0;
     update(ref(db, `users/${id}`), { points: newPoints });
   };
 
   window.resetUser = (id) => {
-    if(myRole === "admin" && confirm("Wirklich löschen?")) {
+    if((myRole === "jannis" || myRole === "mama") && confirm("Wirklich löschen?")) {
       update(ref(db, `users/${id}`), { points: 0 });
     }
   };
@@ -144,19 +149,35 @@
     Object.entries(currentUsers).forEach(([id, user]) => {
       const card = document.createElement("div");
       card.className = "card";
+      
+      let buttonsHtml = "";
+      
+      if (myRole === "jannis") {
+        buttonsHtml = `
+          <div class="btn-row">
+            <button class="btn-plus" onclick="changePoint('${id}', 1)">+ 1 Punkt</button>
+            <button class="btn-minus" onclick="changePoint('${id}', -1)">- 1 Punkt</button>
+            <button class="btn-reset" onclick="resetUser('${id}')">Reset</button>
+          </div>
+        `;
+      } else if (myRole === "mama") {
+        buttonsHtml = `
+          <div class="btn-row">
+            <button class="btn-minus" onclick="changePoint('${id}', -1)">- 1 Punkt</button>
+            <button class="btn-reset" onclick="resetUser('${id}')">Reset</button>
+          </div>
+        `;
+      } else {
+        buttonsHtml = `<p style="font-size:12px; color:gray;">Nur Lesezugriff</p>`;
+      }
+
       card.innerHTML = `
         <div class="name">${user.name}</div>
         <div class="score-box">
           <div class="stat"><span class="stat-val">${user.points}</span><span class="stat-label">Punkte</span></div>
           <div class="stat"><span class="stat-val">${user.points * 2}</span><span class="stat-label">Minuten</span></div>
         </div>
-        ${myRole === "admin" ? `
-          <div class="btn-row">
-            <button class="btn-plus" onclick="changePoint('${id}', 1)">+ 1 Punkt</button>
-            <button class="btn-minus" onclick="changePoint('${id}', -1)">- 1 Punkt</button>
-            <button class="btn-reset" onclick="resetUser('${id}')">Reset</button>
-          </div>
-        ` : `<p style="font-size:12px; color:gray;">Nur Lesezugriff</p>`}
+        ${buttonsHtml}
       `;
       container.appendChild(card);
     });
